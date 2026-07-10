@@ -1,0 +1,107 @@
+version: '3.8'
+
+services:
+  # 1. La base de métadonnées
+  superset-db:
+    image: postgres:15-alpine
+    container_name: superset-db
+    environment:
+      - POSTGRES_DB=superset
+      - POSTGRES_USER=superset
+      - POSTGRES_PASSWORD=superset_password
+    ports:
+      - 5432:5432
+    volumes:
+      - superset_db_data:/var/lib/postgresql/data
+    networks:
+      - superset-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U superset -d superset"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # 2. Le conteneur d'initialisation (Il DOIT tourner et réussir AVANT le serveur web)
+  superset-init:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: superset-init
+    environment:
+      - DATABASE_DB=superset
+      - DATABASE_HOST=superset-db
+      - DATABASE_USER=superset
+      - DATABASE_PASSWORD=superset_password
+      - DATABASE_PORT=5432
+      - DATABASE_DIALECT=postgresql
+      - FLASK_ENV=production
+      - SUPERSET_ENV=production
+      - SUPERSET_SECRET_KEY=iu6uRZnYPje4whxvEd+XB3K4W1V+sGIqsiWmol80fFBkmP6GJRxul7DR
+      - SUPERSET_HOME=/app/superset_home
+      - PYTHONPATH=/app/pythonpath
+      - SUPERSET_LOAD_EXAMPLES=no
+    volumes:
+      - ./superset_config.py:/app/pythonpath/superset_config.py:ro
+    depends_on:
+      superset-db:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c", "/app/docker/docker-init.sh"]
+    networks:
+      - superset-net
+
+  # 3. Le serveur Web Apache Superset (Il attend que superset-init ait fini)
+  superset:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: apache-superset
+    ports:
+      - "8088:8088"
+    environment:
+      - DATABASE_DB=superset
+      - DATABASE_HOST=superset-db
+      - DATABASE_USER=superset
+      - DATABASE_PASSWORD=superset_password
+      - DATABASE_PORT=5432
+      - DATABASE_DIALECT=postgresql
+      - FLASK_ENV=production
+      - SUPERSET_ENV=production
+      - SUPERSET_SECRET_KEY=iu6uRZnYPje4whxvEd+XB3K4W1V+sGIqsiWmol80fFBkmP6GJRxul7DR
+      - SUPERSET_HOME=/app/superset_home
+      - PYTHONPATH=/app/pythonpath
+    volumes:
+      - superset_config:/app/superset_home
+      - ./superset_config.py:/app/pythonpath/superset_config.py:ro
+      - ./data:/data:ro
+    depends_on:
+      superset-init:
+        condition: service_completed_successfully
+    networks:
+      - superset-net
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: superset-pgadmin
+    ports:
+      - "5050:80" # Accessible sur http://localhost:5050
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=admin@admin.com # Identifiant de connexion pgAdmin
+      - PGADMIN_DEFAULT_PASSWORD=admin        # Mot de passe de connexion pgAdmin
+      - PGADMIN_CONFIG_SERVER_MODE=False
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+      # Auto-import de la configuration de notre base superset-db
+      - ./pgadmin/servers.json:/pgadmin4/servers.json:ro
+    depends_on:
+      - superset-db
+    networks:
+      - superset-net
+
+volumes:
+  superset_db_data:
+  superset_config:
+  pgadmin_data:
+
+networks:
+  superset-net:
+    driver: bridge
