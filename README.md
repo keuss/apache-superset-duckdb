@@ -90,7 +90,8 @@ https://motherduck.com/
 localhost inaccessible ...
 
 - Passer WSL en mode mirrored (Fortement recommandé)
-- Le conflit d'IPv6 (Fréquent avec le mode Mirrored)
+- Le conflit d'IPv6 (Fréquent avec le mode Mirrored) ?
+- Restart `wsl --shutdown`
 
 ```
 galloisg@FR-JX6QWL3 MINGW64 ~
